@@ -4,12 +4,15 @@ import 'package:go_router/go_router.dart';
 import 'package:just_audio/just_audio.dart';
 import '../../core/theme/app_colors.dart';
 import '../../providers/audio_provider.dart';
+import '../../providers/feature_flags_provider.dart';
 import '../../providers/playlist_provider.dart';
 import '../../services/audio_player_handler.dart';
 import '../../widgets/add_to_playlist_dialog.dart';
 import '../../widgets/playback_speed_dialog.dart';
 import '../../widgets/edit_metadata_dialog.dart';
 import 'vinyl_player_widget.dart';
+import 'queue_manager_screen.dart';
+import 'lyrics_screen.dart';
 
 class NowPlayingScreen extends ConsumerWidget {
   const NowPlayingScreen({super.key});
@@ -36,6 +39,7 @@ class NowPlayingScreen extends ConsumerWidget {
           builder: (context, ref, child) {
             final audioState = ref.watch(audioProvider);
             final isFav = ref.watch(playlistProvider).favoriteTrackIds.contains(track.id);
+            final features = ref.watch(featureFlagsProvider);
 
             return Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
@@ -82,6 +86,31 @@ class NowPlayingScreen extends ConsumerWidget {
                       showAddToPlaylistSheet(context, ref, track);
                     },
                   ),
+                  ListTile(
+                    leading: Icon(Icons.queue_music_rounded, color: AppColors.textSecondary(context)),
+                    title: Text('Queue', style: TextStyle(color: AppColors.textPrimary(context))),
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => const QueueManagerScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  if (features.enableLyrics)
+                    ListTile(
+                      leading: Icon(Icons.lyrics_rounded, color: AppColors.textSecondary(context)),
+                      title: Text('Lyrics', style: TextStyle(color: AppColors.textPrimary(context))),
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => LyricsScreen(track: track),
+                          ),
+                        );
+                      },
+                    ),
                   ListTile(
                     leading: Icon(Icons.edit_note_rounded, color: AppColors.textSecondary(context)),
                     title: Text('Edit Track Metadata', style: TextStyle(color: AppColors.textPrimary(context))),
