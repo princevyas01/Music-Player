@@ -233,8 +233,11 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
       return filtered;
     }
 
-    // Use ranked search index
-    final searchResults = _searchIndex.search(query);
+    // Advanced syntax is opt-in; ordinary queries continue to use the exact
+    // established index and its ranking rules.
+    final searchResults = StorageService.getFeatureFlags().enableAdvancedSearch
+        ? _searchIndex.searchAdvanced(query)
+        : _searchIndex.search(query);
     if (activeGenre != null || activeYear != null) {
       final Set<String> validIds = filtered.map((t) => t.id).toSet();
       return searchResults.where((t) => validIds.contains(t.id)).toList();
