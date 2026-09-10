@@ -1,5 +1,6 @@
 import '../models/track_model.dart';
 import '../models/playlist_model.dart';
+import 'advanced_search_query_parser.dart';
 
 class SearchResult {
   final Track track;
@@ -257,5 +258,64 @@ class SearchIndexService {
     });
 
     return results.map((r) => r.track).toList();
+  }
+
+  /// Applies documented field operators while delegating all free-text ranking
+  /// to [search]. Malformed input deliberately falls back to the legacy search
+  /// path, so a mistyped operator never turns a familiar query into an empty
+  /// library view.
+  List<Track> searchAdvanced(String query, {AdvancedSearchQueryParser? parser}) {
+    final parsed = (parser ?? const AdvancedSearchQueryParser()).parse(query);
+    if (!parsed.isValid || !parsed.hasOperators) return search(query);
+
+    final ranked = parsed.text.trim().isEmpty
+        ? List<Track>.from(_tracks)
+        : search(parsed.text);
+    final playlistTrackIds = <String>{};
+    if (parsed.playlist != null) {
+      final playlistNeedle = normalize(parsed.playlist!);
+      for (final playlist in _playlists) {
+        if (normalize(playlist.name).contains(playlistNeedle)) {
+          playlistTrackIds.addAll(playlist.trackIds);
+        }
+      }
+    }
+
+    bool matchesText(String value, String? needle) {
+      if (needle == null) return true;
+      return normalize(value).contains(normalize(needle));
+    }
+
+    return ranked.where((track) {
+      if (!matchesText(track.artist, parsed.artist) ||
+          !matchesText(track.album, parsed.album) ||
+          !matchesText(track.genre ?? '', parsed.genre) ||
+          !matchesText(track.title, parsed.title)) {
+        return false;
+      }
+      if (parsed.filename != null &&
+          !matchesText(extractFilename(track.filePath), parsed.filename)) {
+        return false;
+      }
+      if (parsed.year != null && track.year != parsed.year) return false;
+      if (parsed.durationLessThanSeconds != null &&
+          track.durationMs >= parsed.durationLessThanSeconds! * 1000) {
+        return false;
+      }
+      if (parsed.durationGreaterThanSeconds != null &&
+          track.durationMs <= parsed.durationGreaterThanSeconds! * 1000) {
+        return false;
+      }
+      if (parsed.before != null && !track.dateAdded.isBefore(parsed.before!)) {
+        return false;
+      }
+      if (parsed.after != null && !track.dateAdded.isAfter(parsed.after!)) {
+        return false;
+      }
+      if (parsed.playlist != null && !playlistTrackIds.contains(track.id)) {
+        return false;
+      }
+      return true;
+    }).toList(growable: false);
   }
 }
