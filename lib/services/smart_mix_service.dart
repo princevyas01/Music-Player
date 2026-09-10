@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/track_model.dart';
 import 'history_service.dart';
 import 'storage_service.dart';
+import '../models/recommendation_model.dart';
+import 'recommendation_service.dart';
 
 final smartMixServiceProvider = Provider.family<SmartMixService, HistoryService>((ref, historyService) {
   return SmartMixService(historyService);
@@ -98,5 +100,21 @@ class SmartMixService {
     }
 
     return mix;
+  }
+
+  /// Opt-in V2 modes reuse RecommendationService. The original generateMix
+  /// method is intentionally left untouched for existing Smart Mix behaviour.
+  List<Track> generateMixV2(
+    List<Track> allTracks, {
+    RecommendationMode mode = RecommendationMode.forYou,
+    Track? contextTrack,
+    int count = 25,
+  }) {
+    return RecommendationService(_historyService).recommend(
+      allTracks,
+      mode: mode,
+      contextTrack: contextTrack,
+      count: count,
+    );
   }
 }
