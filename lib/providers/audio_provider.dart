@@ -6,6 +6,8 @@ import '../models/track_model.dart';
 import '../services/audio_player_handler.dart';
 import '../services/history_service.dart';
 import '../services/storage_service.dart';
+import '../services/session_service.dart';
+import 'session_provider.dart';
 import '../main.dart';
 
 final historyServiceProvider = ChangeNotifierProvider<HistoryService>((ref) => HistoryService());
@@ -69,6 +71,7 @@ class PlaybackStateData {
 class AudioNotifier extends StateNotifier<PlaybackStateData> {
   final AudioPlayerHandler _handler;
   final HistoryService _historyService;
+  final SessionService _sessionService;
   final List<StreamSubscription> _subscriptions = [];
 
   Duration _lastRecordedPosition = Duration.zero;
@@ -76,7 +79,7 @@ class AudioNotifier extends StateNotifier<PlaybackStateData> {
   String? _lastStartedTrackId;
   bool _isManualSkip = false;
 
-  AudioNotifier(this._handler, this._historyService)
+  AudioNotifier(this._handler, this._historyService, this._sessionService)
       : super(PlaybackStateData(
           playbackSpeed: StorageService.getPlaybackSpeed(),
           sleepTimerMinutes: StorageService.getSleepTimerMinutes(),
@@ -114,6 +117,9 @@ class AudioNotifier extends StateNotifier<PlaybackStateData> {
             if (prevTrack != null) {
               if (!_isManualSkip) {
                 _historyService.recordTrackCompleted(prevTrack.id);
+                if (StorageService.getFeatureFlags().enableSessions) {
+                  _sessionService.recordTrackCompleted();
+                }
               }
               _isManualSkip = false;
             }
@@ -144,6 +150,9 @@ class AudioNotifier extends StateNotifier<PlaybackStateData> {
         if (playing && currentTrack != null && currentTrack.id != _lastStartedTrackId) {
           _lastStartedTrackId = currentTrack.id;
           _historyService.recordTrackStart(currentTrack.id);
+          if (StorageService.getFeatureFlags().enableSessions) {
+            _sessionService.recordTrackStarted(currentTrack.id);
+          }
         }
       }),
     );
@@ -160,6 +169,9 @@ class AudioNotifier extends StateNotifier<PlaybackStateData> {
             final delta = (pos - _lastRecordedPosition).inMilliseconds;
             if (delta > 0 && delta < 5000) {
               _historyService.recordPlaybackProgress(state.currentTrack!.id, pos.inMilliseconds, delta);
+              if (StorageService.getFeatureFlags().enableSessions) {
+                _sessionService.recordListenProgress(delta);
+              }
             }
           }
           _lastRecordedPosition = pos;
@@ -192,6 +204,9 @@ class AudioNotifier extends StateNotifier<PlaybackStateData> {
         if (playerState.processingState == ProcessingState.completed) {
           if (state.currentTrack != null) {
             _historyService.recordTrackCompleted(state.currentTrack!.id);
+            if (StorageService.getFeatureFlags().enableSessions) {
+              _sessionService.recordTrackCompleted();
+            }
           }
         }
       }),
@@ -262,6 +277,30 @@ class AudioNotifier extends StateNotifier<PlaybackStateData> {
     );
   }
 
+  /// Selecting a queued item is a manual navigation, not an automatic
+  /// completion. Mark the outgoing track as skipped before the native source
+  /// moves so the sequence listener cannot double-count it as completed.
+  Future<bool> playQueueItem(int index) async {
+    if (index == _handler.currentIndex) return true;
+    if (state.currentTrack != null) {
+      _isManualSkip = true;
+      _historyService.recordTrackSkipped(state.currentTrack!.id);
+      if (StorageService.getFeatureFlags().enableSessions) {
+        _sessionService.recordTrackSkipped();
+      }
+    }
+    final changed = await _handler.playQueueItemAt(index);
+    if (changed) {
+      final current = _handler.currentTrack;
+      state = state.copyWith(
+        currentTrack: current,
+        position: Duration.zero,
+        duration: Duration(milliseconds: current?.durationMs ?? 0),
+      );
+    }
+    return changed;
+  }
+
   Future<void> togglePlayPause() async {
     if (state.currentTrack == null) return;
     if (state.isPlaying) {
@@ -275,6 +314,9 @@ class AudioNotifier extends StateNotifier<PlaybackStateData> {
     if (state.currentTrack != null) {
       _isManualSkip = true;
       _historyService.recordTrackSkipped(state.currentTrack!.id);
+      if (StorageService.getFeatureFlags().enableSessions) {
+        _sessionService.recordTrackSkipped();
+      }
     }
     await _handler.skipToNext();
     final ct = _handler.currentTrack;
@@ -344,6 +386,6 @@ class AudioNotifier extends StateNotifier<PlaybackStateData> {
 final audioProvider = StateNotifierProvider<AudioNotifier, PlaybackStateData>((ref) {
   final handler = ref.watch(audioHandlerProvider);
   final historyService = ref.read(historyServiceProvider);
-  return AudioNotifier(handler, historyService);
+  final sessionService = ref.read(sessionServiceProvider);
+  return AudioNotifier(handler, historyService, sessionService);
 });
-
