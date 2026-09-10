@@ -93,7 +93,12 @@ class LibraryService {
               : 'Unknown Album',
           durationMs: song.duration ?? 180000,
           filePath: song.uri ?? song.data,
-          artworkUri: null,
+          // MediaStore's stable album-art URI is cheap to derive during the
+          // scan. Actual bytes are resolved lazily by ArtworkService.
+          artworkUri: StorageService.getFeatureFlags().enableArtworkPipeline &&
+                  song.albumId != null && song.albumId! > 0
+              ? 'content://media/external/audio/albumart/${song.albumId}'
+              : null,
           dateAdded: DateTime.fromMillisecondsSinceEpoch(dateAddedMs),
           genre: genre,
           year: song.getMap['year'] != null ? int.tryParse(song.getMap['year'].toString()) : null,
