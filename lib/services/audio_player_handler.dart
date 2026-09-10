@@ -8,7 +8,9 @@ import 'storage_service.dart';
 enum StopMode { none, afterCurrentTrack, afterCurrentAlbum, afterCurrentQueue }
 
 class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
-  final AudioPlayer _player = AudioPlayer();
+  final AndroidEqualizer _equalizer = AndroidEqualizer();
+  final AndroidLoudnessEnhancer _loudnessEnhancer = AndroidLoudnessEnhancer();
+  late final AudioPlayer _player;
   final List<StreamSubscription> _subscriptions = [];
 
   List<Track> _playlist = [];
@@ -20,10 +22,20 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
   Timer? _fadeTimer;
 
   AudioPlayerHandler() {
+    // Effects are part of the one existing player pipeline and default to
+    // bypassed. This does not create another player or alter playback until a
+    // user explicitly enables a setting on Android.
+    _player = AudioPlayer(
+      audioPipeline: AudioPipeline(
+        androidAudioEffects: [_equalizer, _loudnessEnhancer],
+      ),
+    );
     _initPlayerListeners();
   }
 
   AudioPlayer get player => _player;
+  AndroidEqualizer get equalizer => _equalizer;
+  AndroidLoudnessEnhancer get loudnessEnhancer => _loudnessEnhancer;
   List<Track> get playlist => List.unmodifiable(_playlist);
   int get currentIndex => _currentIndex;
   Track? get currentTrack => (_currentIndex >= 0 && _currentIndex < _playlist.length) ? _playlist[_currentIndex] : null;
@@ -72,12 +84,10 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
         if (tag != null) {
           mediaItem.add(tag);
           final oldIndex = _currentIndex;
-          final foundIndex = _playlist.indexWhere((t) => t.id == tag.id);
-          if (foundIndex != -1) {
-            _currentIndex = foundIndex;
-          } else {
-            _currentIndex = sequenceState.currentIndex;
-          }
+          // Use just_audio's physical sequence index. Looking up the first
+          // matching track id breaks legitimate repeated queue entries and can
+          // persist the wrong current item after a shuffle or reorder.
+          _currentIndex = sequenceState.currentIndex;
 
           // Handle Stop Modes on track change
           if (oldIndex >= 0 && oldIndex != _currentIndex) {
@@ -204,6 +214,74 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
 
     _playlist.add(track);
     await _audioSource!.add(_createAudioSource(track));
+    _persistQueueState();
+  }
+
+  /// Moves to an already queued item without rebuilding the audio source.
+  /// Seeking the native playlist preserves the current player's listeners,
+  /// position accounting, shuffle mode, and background media session.
+  Future<bool> playQueueItemAt(int index) async {
+    if (index < 0 || index >= _playlist.length || _audioSource == null) {
+      return false;
+    }
+    await _player.seek(Duration.zero, index: index);
+    _currentIndex = index;
+    _persistQueueState();
+    return true;
+  }
+
+  /// Removes an upcoming item. The currently playing source is deliberately
+  /// protected: removing it varies by platform and can produce a phantom
+  /// completion event. Users can select another queued item instead.
+  Future<bool> removeQueueItemAt(int index) async {
+    if (_audioSource == null ||
+        index < 0 ||
+        index >= _playlist.length ||
+        index == _currentIndex) {
+      return false;
+    }
+    await _audioSource!.removeAt(index);
+    _playlist.removeAt(index);
+    if (index < _currentIndex) _currentIndex--;
+    _persistQueueState();
+    return true;
+  }
+
+  /// Reorders the native concatenating source and the persisted logical
+  /// queue together. It never calls setAudioSource, so playback is not reset.
+  Future<bool> moveQueueItem(int fromIndex, int toIndex) async {
+    if (_audioSource == null ||
+        fromIndex < 0 ||
+        toIndex < 0 ||
+        fromIndex >= _playlist.length ||
+        toIndex >= _playlist.length ||
+        fromIndex == toIndex) {
+      return false;
+    }
+
+    await _audioSource!.move(fromIndex, toIndex);
+    final moved = _playlist.removeAt(fromIndex);
+    _playlist.insert(toIndex, moved);
+
+    if (_currentIndex == fromIndex) {
+      _currentIndex = toIndex;
+    } else if (fromIndex < _currentIndex && toIndex >= _currentIndex) {
+      _currentIndex--;
+    } else if (fromIndex > _currentIndex && toIndex <= _currentIndex) {
+      _currentIndex++;
+    }
+    _persistQueueState();
+    return true;
+  }
+
+  /// Clears only tracks after the active one; the current source and current
+  /// position remain untouched.
+  Future<void> clearUpcomingQueue() async {
+    if (_audioSource == null || _currentIndex < 0) return;
+    for (var index = _playlist.length - 1; index > _currentIndex; index--) {
+      await _audioSource!.removeAt(index);
+      _playlist.removeAt(index);
+    }
     _persistQueueState();
   }
 
