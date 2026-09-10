@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme/app_colors.dart';
 import '../../providers/audio_provider.dart';
+import '../../providers/feature_flags_provider.dart';
 import '../../providers/library_provider.dart';
 import '../../providers/playlist_provider.dart';
 import '../../services/backup_restore_service.dart';
@@ -264,6 +265,7 @@ class SettingsScreen extends ConsumerWidget {
 
     final speed = ref.watch(audioProvider.select((s) => s.playbackSpeed));
     final sleepMin = ref.watch(audioProvider.select((s) => s.sleepTimerMinutes));
+    final features = ref.watch(featureFlagsProvider);
 
     return Scaffold(
       backgroundColor: AppColors.bg(context),
@@ -307,6 +309,49 @@ class SettingsScreen extends ConsumerWidget {
                 subtitle: Text('Ignore audio shorter than ${libraryState.shortTrackThresholdSeconds}s', style: TextStyle(color: AppColors.textSecondary(context), fontSize: 12)),
                 trailing: Icon(Icons.chevron_right_rounded, color: AppColors.textSecondary(context)),
                 onTap: () => _showShortTrackFilterDialog(context, ref),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 16),
+
+          // Additive, opt-in capabilities. These default off to preserve the
+          // app's established local-player behaviour after an upgrade.
+          _buildCard(
+            context,
+            title: 'Advanced Features',
+            children: [
+              _buildFeatureToggle(
+                context,
+                label: 'Advanced Search',
+                subtitle: 'Enable filters such as artist:, album: and duration:',
+                value: features.enableAdvancedSearch,
+                onChanged: (value) => ref.read(featureFlagsProvider.notifier)
+                    .update(features.copyWith(enableAdvancedSearch: value)),
+              ),
+              _buildFeatureToggle(
+                context,
+                label: 'Local Lyrics',
+                subtitle: 'Show .lrc and .txt files stored beside music',
+                value: features.enableLyrics,
+                onChanged: (value) => ref.read(featureFlagsProvider.notifier)
+                    .update(features.copyWith(enableLyrics: value)),
+              ),
+              _buildFeatureToggle(
+                context,
+                label: 'Recommendations V2',
+                subtitle: 'Use local listening signals for new mix modes',
+                value: features.enableRecommendationsV2,
+                onChanged: (value) => ref.read(featureFlagsProvider.notifier)
+                    .update(features.copyWith(enableRecommendationsV2: value)),
+              ),
+              _buildFeatureToggle(
+                context,
+                label: 'Adaptive Queue',
+                subtitle: 'Allow suggestions only after no manual upcoming queue remains',
+                value: features.enableAdaptiveQueue,
+                onChanged: (value) => ref.read(featureFlagsProvider.notifier)
+                    .update(features.copyWith(enableAdaptiveQueue: value)),
               ),
             ],
           ),
@@ -445,6 +490,24 @@ class SettingsScreen extends ConsumerWidget {
     );
   }
 
+  Widget _buildFeatureToggle(
+    BuildContext context, {
+    required String label,
+    required String subtitle,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return SwitchListTile(
+      contentPadding: EdgeInsets.zero,
+      secondary: Icon(Icons.tune_rounded, color: AppColors.textSecondary(context)),
+      title: Text(label, style: TextStyle(color: AppColors.textPrimary(context), fontWeight: FontWeight.w600)),
+      subtitle: Text(subtitle, style: TextStyle(color: AppColors.textSecondary(context), fontSize: 12)),
+      activeColor: AppColors.isDark(context) ? AppColors.darkAccent : AppColors.buttonBlack,
+      value: value,
+      onChanged: onChanged,
+    );
+  }
+
   Widget _buildStatItem(BuildContext context, String val, String label) {
     return Column(
       children: [
@@ -455,4 +518,3 @@ class SettingsScreen extends ConsumerWidget {
     );
   }
 }
-
