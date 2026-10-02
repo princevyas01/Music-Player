@@ -3,6 +3,7 @@ import 'package:audio_service/audio_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 import '../models/track_model.dart';
+import '../services/artwork_service.dart';
 import '../services/audio_player_handler.dart';
 import '../services/history_service.dart';
 import '../services/storage_service.dart';
@@ -254,6 +255,18 @@ class AudioNotifier extends StateNotifier<PlaybackStateData> {
         duration: Duration(milliseconds: ct?.durationMs ?? 0),
         position: Duration.zero,
       );
+
+      if (ct != null && (ct.artworkUri == null || ct.artworkUri!.isEmpty)) {
+        ArtworkService.resolveSmartArtwork(
+          trackId: ct.id,
+          filePath: ct.filePath,
+        ).then((resolved) {
+          if (resolved != null && state.currentTrack?.id == ct.id) {
+            final updated = ct.copyWith(artworkUri: resolved);
+            updateTrackMetadata(updated);
+          }
+        });
+      }
     } catch (e) {
       state = state.copyWith(isPlaying: false);
     }
@@ -371,6 +384,13 @@ class AudioNotifier extends StateNotifier<PlaybackStateData> {
   void setStopMode(StopMode mode) {
     state = state.copyWith(stopMode: mode);
     _handler.setStopMode(mode);
+  }
+
+  void updateTrackMetadata(Track updated) {
+    _handler.updateTrackMetadata(updated);
+    if (state.currentTrack?.id == updated.id) {
+      state = state.copyWith(currentTrack: updated);
+    }
   }
 
   @override
