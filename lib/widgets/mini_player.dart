@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 import '../core/theme/app_colors.dart';
 import '../providers/audio_provider.dart';
 
+import 'vinyl_disc_widget.dart';
+
 class MiniPlayer extends ConsumerWidget {
   const MiniPlayer({super.key});
 
@@ -32,25 +34,15 @@ class MiniPlayer extends ConsumerWidget {
           ),
           child: Row(
             children: [
-              // Mini circular vinyl icon
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: isDark ? AppColors.darkAccent : AppColors.primaryText,
-                ),
-                child: Center(
-                  child: Container(
-                    width: 14,
-                    height: 14,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: AppColors.accent,
-                      border: Border.all(color: Colors.white, width: 2),
-                    ),
-                  ),
-                ),
+              // Mini circular vinyl icon with custom photo support
+              VinylDiscWidget(
+                size: 44,
+                title: track.title,
+                artist: track.artist,
+                artworkUri: track.artworkUri,
+                trackId: track.id,
+                filePath: track.filePath,
+                seed: int.tryParse(track.id.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0,
               ),
               const SizedBox(width: 12),
               // Track Info
