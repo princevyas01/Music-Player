@@ -49,15 +49,9 @@ class SmartCropService {
       final decoded = img.decodeImage(payload.bytes);
       if (decoded == null) return null;
 
-      final cropped = smartCropToSquare(decoded);
-      final resized = img.copyResize(
-        cropped,
-        width: 512,
-        height: 512,
-        interpolation: img.Interpolation.cubic,
-      );
+      final fitted = fitArtworkForCircle(decoded, canvasSize: 512);
 
-      final encoded = img.encodeJpg(resized, quality: 90);
+      final encoded = img.encodeJpg(fitted, quality: 90);
 
       final artworkDir = Directory(payload.outDirPath);
       if (!await artworkDir.exists()) {
@@ -66,14 +60,19 @@ class SmartCropService {
 
       final safeId = payload.trackId.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
 
-      // Clean up previous custom artwork for this track to preserve storage
+      // Clean up previous custom or fitted artwork for this track to preserve storage
       try {
         if (artworkDir.existsSync()) {
           final entries = artworkDir.listSync();
           for (final entry in entries) {
             if (entry is File) {
               final filename = entry.path.split(Platform.pathSeparator).last;
-              if (filename.startsWith('${payload.prefix}${safeId}_') || filename == '${payload.prefix}$safeId.jpg') {
+              if (filename.startsWith('${payload.prefix}${safeId}_') ||
+                  filename == '${payload.prefix}$safeId.jpg' ||
+                  filename.startsWith('auto_${safeId}_') ||
+                  filename == 'auto_$safeId.jpg' ||
+                  filename.startsWith('fit_${safeId}_') ||
+                  filename == 'fit_$safeId.jpg') {
                 try {
                   entry.deleteSync();
                 } catch (_) {}
@@ -91,6 +90,92 @@ class SmartCropService {
       debugPrint('SmartCropService error: $e');
       return null;
     }
+  }
+
+  /// Fits an artwork image into a circular canvas without cutting off landscape or portrait content.
+  ///
+  /// For landscape images (e.g. 16:9 YouTube thumbnails), it preserves the full uncropped
+  /// rectangle, scaling it to span across the circle (~92% of circle diameter), and fills the
+  /// top and bottom circular segments with a smooth ambient blurred extension of the artwork.
+  ///
+  /// For already-square images (e.g. standard 1:1 album covers), it resizes directly to [canvasSize]x[canvasSize].
+  static img.Image fitArtworkForCircle(img.Image src, {int canvasSize = 512}) {
+    if (src.width <= 0 || src.height <= 0) return src;
+
+    final double aspect = src.width / src.height;
+
+    // Already roughly square: standard album cover (0.92 .. 1.08)
+    if (aspect >= 0.92 && aspect <= 1.08) {
+      if (src.width == canvasSize && src.height == canvasSize) {
+        return src;
+      }
+      return img.copyResize(
+        src,
+        width: canvasSize,
+        height: canvasSize,
+        interpolation: img.Interpolation.cubic,
+      );
+    }
+
+    // Determine target dimensions for the sharp foreground image
+    int targetW;
+    int targetH;
+
+    if (aspect > 1.0) {
+      // Landscape (e.g. 16:9 YouTube thumbnail)
+      // Allow corners to touch or slightly touch circular boundary (~5% radius margin)
+      // while showing almost 100% of the entire landscape thumbnail width.
+      final double maxRadius = (canvasSize / 2.0) * 1.05;
+      final double calculatedW = (2.0 * maxRadius) / sqrt(1.0 + (1.0 / (aspect * aspect)));
+      targetW = min((canvasSize * 0.92).round(), calculatedW.round());
+      targetH = max(1, (targetW / aspect).round());
+    } else {
+      // Portrait (tall)
+      final double maxRadius = (canvasSize / 2.0) * 1.05;
+      final double calculatedH = (2.0 * maxRadius) / sqrt(1.0 + (aspect * aspect));
+      targetH = min((canvasSize * 0.92).round(), calculatedH.round());
+      targetW = max(1, (targetH * aspect).round());
+    }
+
+    // 1. Create ambient blurred background
+    // Downscale for fast, butter-smooth Gaussian diffusion
+    final bgSquare = smartCropToSquare(src);
+    final bgThumb = img.copyResize(
+      bgSquare,
+      width: 96,
+      height: 96,
+      interpolation: img.Interpolation.linear,
+    );
+
+    // Darken ambient background slightly for high contrast vinyl aesthetics
+    for (final pixel in bgThumb) {
+      pixel.r = (pixel.r * 0.65).round();
+      pixel.g = (pixel.g * 0.65).round();
+      pixel.b = (pixel.b * 0.65).round();
+    }
+
+    final blurredThumb = img.gaussianBlur(bgThumb, radius: 10);
+    final canvas = img.copyResize(
+      blurredThumb,
+      width: canvasSize,
+      height: canvasSize,
+      interpolation: img.Interpolation.linear,
+    );
+
+    // 2. Resize sharp foreground artwork preserving natural aspect ratio
+    final fg = img.copyResize(
+      src,
+      width: targetW,
+      height: targetH,
+      interpolation: img.Interpolation.cubic,
+    );
+
+    // 3. Composite foreground centered onto the ambient background
+    final dstX = (canvasSize - targetW) ~/ 2;
+    final dstY = (canvasSize - targetH) ~/ 2;
+    img.compositeImage(canvas, fg, dstX: dstX, dstY: dstY);
+
+    return canvas;
   }
 
   /// Core intelligent crop algorithm.
