@@ -47,7 +47,7 @@ class StorageService {
       try {
         await Hive.openBox(boxName);
       } catch (e) {
-        debugPrint('StorageService: Non-fatal error opening box ' + boxName + ': ' + e.toString());
+        debugPrint('StorageService: Non-fatal error opening box $boxName: $e');
       }
     }
   }
@@ -69,6 +69,7 @@ class StorageService {
     return rawTracks.map((track) {
       final override = overrides[track.id];
       if (override == null) return track;
+      final shouldClearArt = override.artworkUri != null && override.artworkUri!.isEmpty;
       return track.copyWith(
         title: override.title ?? track.title,
         artist: override.artist ?? track.artist,
@@ -77,6 +78,8 @@ class StorageService {
         year: override.year ?? track.year,
         trackNumber: override.trackNumber ?? track.trackNumber,
         discNumber: override.discNumber ?? track.discNumber,
+        artworkUri: shouldClearArt ? null : (override.artworkUri ?? track.artworkUri),
+        clearArtwork: shouldClearArt,
       );
     }).toList();
   }
@@ -477,7 +480,7 @@ class StorageService {
 
       final schemaVersion = (map['schemaVersion'] as num?)?.toInt() ?? 0;
       if (schemaVersion < 1) {
-        debugPrint('StorageService: Unsupported backup schema version ' + schemaVersion.toString());
+        debugPrint('StorageService: Unsupported backup schema version $schemaVersion');
         return false;
       }
 
@@ -563,7 +566,7 @@ class StorageService {
 
       return true;
     } catch (e, st) {
-      debugPrint('StorageService restoreBackupJson failed: ' + e.toString() + '\n' + st.toString());
+      debugPrint('StorageService restoreBackupJson failed: $e\n$st');
       return false;
     }
   }
