@@ -1,12 +1,17 @@
+import 'dart:io';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../core/theme/app_colors.dart';
+import '../../services/artwork_service.dart';
 
 class VinylPlayerWidget extends StatefulWidget {
   final bool isPlaying;
   final double size;
   final double progress; // 0.0 to 1.0
   final ValueChanged<double>? onSeek; // Callback when user drags
+  final String? artworkUri;
+  final String? trackId;
+  final String? filePath;
 
   const VinylPlayerWidget({
     super.key,
@@ -14,6 +19,9 @@ class VinylPlayerWidget extends StatefulWidget {
     this.size = 280,
     this.progress = 0.0,
     this.onSeek,
+    this.artworkUri,
+    this.trackId,
+    this.filePath,
   });
 
   @override
@@ -26,10 +34,53 @@ class _VinylPlayerWidgetState extends State<VinylPlayerWidget>
   late AnimationController _tonearmController;
   late Animation<double> _tonearmAnimation;
   double? _dragProgress;
+  String? _resolvedPath;
+
+  bool _hasValidArtworkFile(String? uri) {
+    if (uri == null || uri.trim().isEmpty) return false;
+    final path = uri.startsWith('file://') ? Uri.parse(uri).toFilePath() : uri;
+    if (path.startsWith('content://')) return false;
+    try {
+      return File(path).existsSync();
+    } catch (_) {
+      return false;
+    }
+  }
+
+  String _cleanPath(String uri) {
+    return uri.startsWith('file://') ? Uri.parse(uri).toFilePath() : uri;
+  }
+
+  void _checkArtwork() {
+    if (_hasValidArtworkFile(widget.artworkUri)) {
+      _resolvedPath = widget.artworkUri;
+      return;
+    }
+
+    if (widget.trackId != null) {
+      final cached = ArtworkService.getCachedArtworkPath(widget.trackId!);
+      if (_hasValidArtworkFile(cached)) {
+        _resolvedPath = cached;
+        return;
+      }
+
+      ArtworkService.resolveSmartArtwork(
+        trackId: widget.trackId!,
+        filePath: widget.filePath,
+      ).then((res) {
+        if (mounted && res != null && _hasValidArtworkFile(res)) {
+          setState(() {
+            _resolvedPath = res;
+          });
+        }
+      });
+    }
+  }
 
   @override
   void initState() {
     super.initState();
+    _checkArtwork();
 
     // Continuous 6s revolution for vinyl disc
     _vinylController = AnimationController(
@@ -67,6 +118,11 @@ class _VinylPlayerWidgetState extends State<VinylPlayerWidget>
         _vinylController.stop(canceled: false); // Hold angle in place
         _tonearmController.reverse();
       }
+    }
+    if (widget.artworkUri != oldWidget.artworkUri ||
+        widget.trackId != oldWidget.trackId ||
+        widget.filePath != oldWidget.filePath) {
+      _checkArtwork();
     }
   }
 
@@ -146,15 +202,40 @@ class _VinylPlayerWidgetState extends State<VinylPlayerWidget>
                           end: Alignment.bottomRight,
                         ),
                       ),
-                      child: Center(
-                        child: Container(
-                          width: 14,
-                          height: 14,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: AppColors.background,
-                            border: Border.all(color: Colors.black26, width: 1.5),
-                          ),
+                      child: ClipOval(
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            Builder(
+                              builder: (context) {
+                                final activeArt = _hasValidArtworkFile(_resolvedPath)
+                                    ? _resolvedPath
+                                    : (_hasValidArtworkFile(widget.artworkUri) ? widget.artworkUri : null);
+                                if (activeArt != null) {
+                                  return Image.file(
+                                    File(_cleanPath(activeArt)),
+                                    width: widget.size * 0.35,
+                                    height: widget.size * 0.35,
+                                    fit: BoxFit.cover,
+                                    filterQuality: FilterQuality.high,
+                                    errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                                  );
+                                }
+                                return const SizedBox.shrink();
+                              },
+                            ),
+                            Center(
+                              child: Container(
+                                width: 14,
+                                height: 14,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: AppColors.background,
+                                  border: Border.all(color: Colors.black26, width: 1.5),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
