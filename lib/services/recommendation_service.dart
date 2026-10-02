@@ -232,11 +232,11 @@ class _RecommendationProfile {
 _RecommendationProfile _profile(RecommendationMode mode) {
   switch (mode) {
     case RecommendationMode.recentlyRelevant:
-      return const _RecommendationProfile(historical: 0.5, recent: 2, novelty: 0.5);
+      return const _RecommendationProfile(historical: 0.5, recent: 2, novelty: 0.5, recentRepeatPenalty: 1.5);
     case RecommendationMode.rediscover:
       return const _RecommendationProfile(recent: 0, rediscovery: 2, overplayPenalty: 2);
     case RecommendationMode.discover:
-      return const _RecommendationProfile(historical: 0, completion: 0, discovery: 2, novelty: 1.5);
+      return const _RecommendationProfile(historical: 0, completion: 0, discovery: 2, novelty: 1.5, skipPenalty: 1.5);
     case RecommendationMode.deepCuts:
       return const _RecommendationProfile(historical: 0.25, discovery: 1.5, overplayPenalty: 2);
     case RecommendationMode.forgottenFavorites:
