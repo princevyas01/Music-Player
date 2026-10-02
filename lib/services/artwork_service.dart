@@ -74,11 +74,11 @@ class ArtworkService {
               }
             }
           }
-          // Priority 2: Auto-selected audio artwork ('auto_')
+          // Priority 2: Fitted circle artwork ('fit_')
           for (final f in files) {
             if (f is File) {
               final name = f.path.split(Platform.pathSeparator).last;
-              if (name.startsWith('auto_${safeId}_') || name == 'auto_$safeId.jpg') {
+              if (name.startsWith('fit_${safeId}_') || name == 'fit_$safeId.jpg') {
                 _resolvedPaths[trackId] = f.path;
                 return f.path;
               }
@@ -129,7 +129,7 @@ class ArtworkService {
         for (final f in files) {
           if (f is File) {
             final name = f.path.split(Platform.pathSeparator).last;
-            if (name.startsWith('auto_${safeId}_') || name == 'auto_$safeId.jpg') {
+            if (name.startsWith('fit_${safeId}_') || name == 'fit_$safeId.jpg') {
               _resolvedPaths[trackId] = f.path;
               return f.path;
             }
@@ -179,13 +179,13 @@ class ArtworkService {
         rawBytes = await AudioArtworkExtractor.extractArtworkFromFile(filePath);
       }
 
-      // 3. If photo found: Smart-crop it to square with saliency and circular weighting!
+      // 3. If photo found: Fit artwork for circular display without squaring landscape
       if (rawBytes != null && rawBytes.isNotEmpty) {
         final savedPath = await SmartCropService.processAndSaveArtwork(
           imageBytes: rawBytes,
           trackId: trackId,
           outputDirectoryPath: outDir,
-          prefix: 'auto_',
+          prefix: 'fit_',
         );
 
         if (savedPath != null && savedPath.isNotEmpty) {
