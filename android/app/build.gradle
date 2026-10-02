@@ -7,7 +7,7 @@ plugins {
 
 android {
     namespace = "com.vibeflow.music_player"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 35
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
