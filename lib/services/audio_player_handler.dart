@@ -3,6 +3,7 @@ import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:flutter/foundation.dart';
 import '../models/track_model.dart';
+import 'artwork_service.dart';
 import 'storage_service.dart';
 
 enum StopMode { none, afterCurrentTrack, afterCurrentAlbum, afterCurrentQueue }
@@ -133,13 +134,26 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
   }
 
   AudioSource _createAudioSource(Track track) {
+    Uri? resolvedArtUri;
+    String? uriStr = track.artworkUri;
+    if (uriStr == null || uriStr.isEmpty) {
+      uriStr = ArtworkService.getCachedArtworkPath(track.id);
+    }
+    if (uriStr != null && uriStr.isNotEmpty) {
+      if (uriStr.startsWith('http') || uriStr.startsWith('content:') || uriStr.startsWith('file:')) {
+        resolvedArtUri = Uri.tryParse(uriStr);
+      } else {
+        resolvedArtUri = Uri.file(uriStr);
+      }
+    }
+
     final tag = MediaItem(
       id: track.id,
       album: track.album,
       title: track.title,
       artist: track.artist,
       duration: Duration(milliseconds: track.durationMs),
-      artUri: track.artworkUri != null ? Uri.parse(track.artworkUri!) : null,
+      artUri: resolvedArtUri,
     );
     if (track.filePath.startsWith('asset:///')) {
       return AudioSource.uri(Uri.parse(track.filePath), tag: tag);
@@ -233,6 +247,7 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
   /// Removes an upcoming item. The currently playing source is deliberately
   /// protected: removing it varies by platform and can produce a phantom
   /// completion event. Users can select another queued item instead.
+  @override
   Future<bool> removeQueueItemAt(int index) async {
     if (_audioSource == null ||
         index < 0 ||
@@ -408,5 +423,34 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
     }
     _subscriptions.clear();
     await _player.dispose();
+  }
+
+  void updateTrackMetadata(Track updated) {
+    for (int i = 0; i < _playlist.length; i++) {
+      if (_playlist[i].id == updated.id) {
+        _playlist[i] = updated;
+      }
+    }
+    if (currentTrack?.id == updated.id) {
+      Uri? resolvedArtUri;
+      if (updated.artworkUri != null && updated.artworkUri!.isNotEmpty) {
+        final uriStr = updated.artworkUri!;
+        if (uriStr.startsWith('http') || uriStr.startsWith('content:') || uriStr.startsWith('file:')) {
+          resolvedArtUri = Uri.tryParse(uriStr);
+        } else {
+          resolvedArtUri = Uri.file(uriStr);
+        }
+      }
+
+      final tag = MediaItem(
+        id: updated.id,
+        album: updated.album,
+        title: updated.title,
+        artist: updated.artist,
+        duration: Duration(milliseconds: updated.durationMs),
+        artUri: resolvedArtUri,
+      );
+      mediaItem.add(tag);
+    }
   }
 }
