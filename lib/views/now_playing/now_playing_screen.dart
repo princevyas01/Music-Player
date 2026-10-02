@@ -2,11 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../core/theme/app_colors.dart';
+import '../../models/metadata_override_model.dart';
+import '../../models/track_model.dart';
 import '../../providers/audio_provider.dart';
 import '../../providers/feature_flags_provider.dart';
+import '../../providers/library_provider.dart';
 import '../../providers/playlist_provider.dart';
 import '../../services/audio_player_handler.dart';
+import '../../services/smart_crop_service.dart';
+import '../../services/storage_service.dart';
 import '../../widgets/add_to_playlist_dialog.dart';
 import '../../widgets/playback_speed_dialog.dart';
 import '../../widgets/edit_metadata_dialog.dart';
@@ -22,6 +28,69 @@ class NowPlayingScreen extends ConsumerWidget {
     final minutes = duration.inMinutes;
     final seconds = duration.inSeconds % 60;
     return '$minutes:${seconds.toString().padLeft(2, '0')}';
+  }
+
+  Future<void> _pickAndChangeSongPhoto(BuildContext context, WidgetRef ref, Track track) async {
+    try {
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(source: ImageSource.gallery, imageQuality: 95);
+      if (picked == null) return;
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)),
+                SizedBox(width: 12),
+                Text('Smart-cropping photo for circular disc...'),
+              ],
+            ),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+
+      final bytes = await picked.readAsBytes();
+      final croppedPath = await SmartCropService.processAndSaveArtwork(
+        imageBytes: bytes,
+        trackId: track.id,
+      );
+
+      if (croppedPath == null) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Failed to process image.')),
+          );
+        }
+        return;
+      }
+
+      final existingOverrides = StorageService.getMetadataOverridesMap();
+      final existing = existingOverrides[track.id];
+      final newOverride = (existing ?? MetadataOverride(trackId: track.id, updatedAt: DateTime.now()))
+          .copyWith(artworkUri: croppedPath, updatedAt: DateTime.now());
+
+      await ref.read(libraryProvider.notifier).applyMetadataOverride(
+        newOverride,
+        onTrackUpdated: (updated) {
+          ref.read(audioProvider.notifier).updateTrackMetadata(updated);
+        },
+      );
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Song photo updated!')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error adding song photo: $e')),
+        );
+      }
+    }
   }
 
   void _showTrackOptionsMenu(BuildContext context, WidgetRef ref) {
@@ -111,6 +180,15 @@ class NowPlayingScreen extends ConsumerWidget {
                         );
                       },
                     ),
+                  ListTile(
+                    leading: Icon(Icons.add_photo_alternate_outlined, color: AppColors.textSecondary(context)),
+                    title: Text('Change Song Photo', style: TextStyle(color: AppColors.textPrimary(context))),
+                    subtitle: Text('Smart-crop photo to circular disc', style: TextStyle(color: AppColors.textSecondary(context), fontSize: 11)),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _pickAndChangeSongPhoto(context, ref, track);
+                    },
+                  ),
                   ListTile(
                     leading: Icon(Icons.edit_note_rounded, color: AppColors.textSecondary(context)),
                     title: Text('Edit Track Metadata', style: TextStyle(color: AppColors.textPrimary(context))),
@@ -294,6 +372,9 @@ class NowPlayingScreen extends ConsumerWidget {
                   isPlaying: isPlaying,
                   size: 240,
                   progress: progress,
+                  artworkUri: track.artworkUri,
+                  trackId: track.id,
+                  filePath: track.filePath,
                   onSeek: (newProgress) {
                     final newMillis = (newProgress * duration.inMilliseconds).round();
                     ref.read(audioProvider.notifier).seek(Duration(milliseconds: newMillis));
