@@ -615,6 +615,25 @@ void main() {
       expect(restored.album, isNull);
       expect(restored.genre, isNull);
       expect(restored.year, isNull);
+      expect(restored.artworkUri, isNull);
+    });
+
+    test('artworkUri serializes, deserializes, and copies correctly', () {
+      final override = MetadataOverride(
+        trackId: 't1',
+        artworkUri: '/path/to/art_custom.jpg',
+        updatedAt: DateTime.now(),
+      );
+
+      final map = override.toMap();
+      final restored = MetadataOverride.fromMap(map);
+      expect(restored.artworkUri, '/path/to/art_custom.jpg');
+
+      final copied = override.copyWith(artworkUri: '/path/to/new_art.jpg');
+      expect(copied.artworkUri, '/path/to/new_art.jpg');
+
+      final cleared = copied.copyWith(clearArtwork: true);
+      expect(cleared.artworkUri, '');
     });
   });
 
