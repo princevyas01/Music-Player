@@ -207,9 +207,15 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     );
   }
 
-  Future<void> applyMetadataOverride(MetadataOverride override) async {
+  Future<void> applyMetadataOverride(MetadataOverride override, {void Function(Track updated)? onTrackUpdated}) async {
     await StorageService.saveMetadataOverride(override);
     await scanLibrary(forceRescan: false);
+    if (onTrackUpdated != null) {
+      final updatedTrack = state.tracks.where((t) => t.id == override.trackId).firstOrNull;
+      if (updatedTrack != null) {
+        onTrackUpdated(updatedTrack);
+      }
+    }
   }
 
   List<Track> _applyFiltersAndSearch(
