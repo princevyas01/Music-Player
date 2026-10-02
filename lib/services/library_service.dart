@@ -3,6 +3,7 @@ import 'package:on_audio_query/on_audio_query.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter/foundation.dart';
 import '../models/track_model.dart';
+import 'artwork_service.dart';
 import 'storage_service.dart';
 
 class LibraryService {
@@ -95,10 +96,11 @@ class LibraryService {
           filePath: song.uri ?? song.data,
           // MediaStore's stable album-art URI is cheap to derive during the
           // scan. Actual bytes are resolved lazily by ArtworkService.
-          artworkUri: StorageService.getFeatureFlags().enableArtworkPipeline &&
-                  song.albumId != null && song.albumId! > 0
-              ? 'content://media/external/audio/albumart/${song.albumId}'
-              : null,
+          artworkUri: ArtworkService.getCachedArtworkPath(song.id.toString()) ??
+              (StorageService.getFeatureFlags().enableArtworkPipeline &&
+                      song.albumId != null && song.albumId! > 0
+                  ? 'content://media/external/audio/albumart/${song.albumId}'
+                  : null),
           dateAdded: DateTime.fromMillisecondsSinceEpoch(dateAddedMs),
           genre: genre,
           year: song.getMap['year'] != null ? int.tryParse(song.getMap['year'].toString()) : null,
@@ -113,6 +115,7 @@ class LibraryService {
         await StorageService.clearTracks();
       }
       await StorageService.saveTracks(tracks);
+      ArtworkService.warmupLibraryArtwork(tracks);
       return tracks;
     } catch (e) {
       debugPrint('LibraryService query error: $e');
