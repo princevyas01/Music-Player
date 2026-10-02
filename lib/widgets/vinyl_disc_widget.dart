@@ -57,8 +57,23 @@ class _VinylDiscWidgetState extends State<VinylDiscWidget> {
   }
 
   void _checkArtwork() {
-    if (_isValidFile(widget.artworkUri)) {
+    if (_isValidFile(widget.artworkUri) && !widget.artworkUri!.contains('auto_')) {
       _resolvedPath = widget.artworkUri;
+      if (widget.trackId != null &&
+          !widget.artworkUri!.contains('fit_') &&
+          !widget.artworkUri!.contains('art_')) {
+        ArtworkService.resolveSmartArtwork(
+          trackId: widget.trackId!,
+          filePath: widget.filePath,
+          albumId: widget.albumId,
+        ).then((res) {
+          if (mounted && res != null && _isValidFile(res)) {
+            setState(() {
+              _resolvedPath = res;
+            });
+          }
+        });
+      }
       return;
     }
 
