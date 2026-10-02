@@ -1,14 +1,21 @@
+import 'dart:io';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import '../core/theme/app_colors.dart';
 
+import '../services/artwork_service.dart';
+
 /// Renders a circular album artwork placeholder with varied styles
 /// matching the exact reference image (text, gradients, abstracts) with theme support.
-class VinylDiscWidget extends StatelessWidget {
+/// Automatically resolves and displays smart-cropped photos from the audio track.
+class VinylDiscWidget extends StatefulWidget {
   final double size;
   final String? title;
   final String? artist;
   final String? artworkUri;
+  final String? trackId;
+  final String? filePath;
+  final int? albumId;
   final int seed;
 
   const VinylDiscWidget({
@@ -17,16 +24,90 @@ class VinylDiscWidget extends StatelessWidget {
     this.title,
     this.artist,
     this.artworkUri,
+    this.trackId,
+    this.filePath,
+    this.albumId,
     this.seed = 0,
   });
 
   @override
+  State<VinylDiscWidget> createState() => _VinylDiscWidgetState();
+}
+
+class _VinylDiscWidgetState extends State<VinylDiscWidget> {
+  String? _resolvedPath;
+
+  double get size => widget.size;
+  int get seed => widget.seed;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkArtwork();
+  }
+
+  @override
+  void didUpdateWidget(VinylDiscWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.artworkUri != oldWidget.artworkUri ||
+        widget.trackId != oldWidget.trackId ||
+        widget.filePath != oldWidget.filePath) {
+      _checkArtwork();
+    }
+  }
+
+  void _checkArtwork() {
+    if (_isValidFile(widget.artworkUri)) {
+      _resolvedPath = widget.artworkUri;
+      return;
+    }
+
+    if (widget.trackId != null) {
+      final cached = ArtworkService.getCachedArtworkPath(widget.trackId!);
+      if (_isValidFile(cached)) {
+        _resolvedPath = cached;
+        return;
+      }
+
+      ArtworkService.resolveSmartArtwork(
+        trackId: widget.trackId!,
+        filePath: widget.filePath,
+        albumId: widget.albumId,
+      ).then((res) {
+        if (mounted && res != null && _isValidFile(res)) {
+          setState(() {
+            _resolvedPath = res;
+          });
+        }
+      });
+    }
+  }
+
+  bool _isValidFile(String? uri) {
+    if (uri == null || uri.trim().isEmpty) return false;
+    final path = uri.startsWith('file://') ? Uri.parse(uri).toFilePath() : uri;
+    if (path.startsWith('content://')) return false;
+    try {
+      return File(path).existsSync();
+    } catch (_) {
+      return false;
+    }
+  }
+
+  String _cleanPath(String uri) {
+    return uri.startsWith('file://') ? Uri.parse(uri).toFilePath() : uri;
+  }
+
+  @override
   Widget build(BuildContext context) {
     final isDark = AppColors.isDark(context);
+    final activePath = _isValidFile(_resolvedPath)
+        ? _resolvedPath
+        : (_isValidFile(widget.artworkUri) ? widget.artworkUri : null);
 
     return Container(
-      width: size,
-      height: size,
+      width: widget.size,
+      height: widget.size,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         color: isDark ? const Color(0xFF1B1B26) : Colors.white,
@@ -43,20 +124,22 @@ class VinylDiscWidget extends StatelessWidget {
         ],
       ),
       child: ClipOval(
-        child: artworkUri != null
-            ? _buildArtworkImage()
+        child: (activePath != null)
+            ? _buildArtworkImage(context, activePath)
             : _buildPlaceholder(context),
       ),
     );
   }
 
-  Widget _buildArtworkImage() {
-    // Offline-safe: artwork URIs are never HTTP in an offline music player.
-    // If artworkUri were set, it would be a local file path or content:// URI.
-    // Currently artworkUri is always null (set to null in library_service.dart),
-    // so this path is defensive only.
-    return Builder(
-      builder: (context) => _buildPlaceholder(context),
+  Widget _buildArtworkImage(BuildContext context, String path) {
+    final file = File(_cleanPath(path));
+    return Image.file(
+      file,
+      width: widget.size,
+      height: widget.size,
+      fit: BoxFit.cover,
+      filterQuality: FilterQuality.high,
+      errorBuilder: (context, error, stackTrace) => _buildPlaceholder(context),
     );
   }
 
