@@ -2,14 +2,19 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../core/theme/app_colors.dart';
+import '../../models/metadata_override_model.dart';
 import '../../models/track_model.dart';
 import '../../providers/audio_provider.dart';
 import '../../providers/library_provider.dart';
 import '../../providers/playlist_provider.dart';
+import '../../services/smart_crop_service.dart';
 import '../../services/smart_playlist_service.dart';
 import '../../services/smart_mix_service.dart';
+import '../../services/storage_service.dart';
 import '../../widgets/add_to_playlist_dialog.dart';
+import '../../widgets/edit_metadata_dialog.dart';
 import '../../widgets/vinyl_disc_widget.dart';
 import '../../widgets/create_playlist_dialog.dart';
 import '../../widgets/filter_dialog.dart';
@@ -32,6 +37,179 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickAndChangeSongPhoto(Track track) async {
+    try {
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(source: ImageSource.gallery, imageQuality: 95);
+      if (picked == null) return;
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)),
+                SizedBox(width: 12),
+                Text('Smart-cropping photo for circular disc...'),
+              ],
+            ),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+
+      final bytes = await picked.readAsBytes();
+      final croppedPath = await SmartCropService.processAndSaveArtwork(
+        imageBytes: bytes,
+        trackId: track.id,
+      );
+
+      if (croppedPath == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Failed to process image.')),
+          );
+        }
+        return;
+      }
+
+      final existingOverrides = StorageService.getMetadataOverridesMap();
+      final existing = existingOverrides[track.id];
+      final newOverride = (existing ?? MetadataOverride(trackId: track.id, updatedAt: DateTime.now()))
+          .copyWith(artworkUri: croppedPath, updatedAt: DateTime.now());
+
+      await ref.read(libraryProvider.notifier).applyMetadataOverride(
+        newOverride,
+        onTrackUpdated: (updated) {
+          ref.read(audioProvider.notifier).updateTrackMetadata(updated);
+        },
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Song photo updated!')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error adding song photo: $e')),
+        );
+      }
+    }
+  }
+
+  void _showTrackOptions(Track track) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface(context),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (context) {
+        final isFav = ref.watch(playlistProvider).favoriteTrackIds.contains(track.id);
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.divider(context),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  VinylDiscWidget(
+                    size: 48,
+                    title: track.title,
+                    artist: track.artist,
+                    artworkUri: track.artworkUri,
+                    trackId: track.id,
+                    filePath: track.filePath,
+                    seed: int.tryParse(track.id.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0,
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          track.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.textPrimary(context),
+                          ),
+                        ),
+                        Text(
+                          track.artist,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textSecondary(context),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const Divider(height: 24),
+              ListTile(
+                leading: Icon(Icons.add_photo_alternate_outlined, color: AppColors.textSecondary(context)),
+                title: Text('Change Song Photo', style: TextStyle(color: AppColors.textPrimary(context))),
+                subtitle: Text('Smart-crop photo to circular disc', style: TextStyle(color: AppColors.textSecondary(context), fontSize: 11)),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickAndChangeSongPhoto(track);
+                },
+              ),
+              ListTile(
+                leading: Icon(Icons.edit_note_rounded, color: AppColors.textSecondary(context)),
+                title: Text('Edit Track Metadata', style: TextStyle(color: AppColors.textPrimary(context))),
+                onTap: () {
+                  Navigator.pop(context);
+                  showDialog(
+                    context: context,
+                    builder: (context) => EditMetadataDialog(track: track),
+                  );
+                },
+              ),
+              ListTile(
+                leading: Icon(Icons.playlist_add_rounded, color: AppColors.textSecondary(context)),
+                title: Text('Add to Playlist', style: TextStyle(color: AppColors.textPrimary(context))),
+                onTap: () {
+                  Navigator.pop(context);
+                  showAddToPlaylistSheet(context, ref, track);
+                },
+              ),
+              ListTile(
+                leading: Icon(
+                  isFav ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                  color: isFav ? Colors.redAccent : AppColors.textSecondary(context),
+                ),
+                title: Text(isFav ? 'Remove from Favorites' : 'Add to Favorites', style: TextStyle(color: AppColors.textPrimary(context))),
+                onTap: () {
+                  ref.read(playlistProvider.notifier).toggleFavorite(track.id);
+                  Navigator.pop(context);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -469,18 +647,32 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       itemCount: filteredFavs.length,
       itemBuilder: (context, index) {
         final track = filteredFavs[index];
-        return Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: AppColors.surface(context),
-            borderRadius: BorderRadius.circular(24),
-            boxShadow: AppColors.softShadow(context),
-          ),
-          child: Row(
-            children: [
-              VinylDiscWidget(size: 50, title: track.title, seed: index),
-              const SizedBox(width: 14),
+        return GestureDetector(
+          onTap: () {
+            ref.read(audioProvider.notifier).playTrackList(filteredFavs, index);
+          },
+          onLongPress: () => _showTrackOptions(track),
+          behavior: HitTestBehavior.opaque,
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: AppColors.surface(context),
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: AppColors.softShadow(context),
+            ),
+            child: Row(
+              children: [
+                VinylDiscWidget(
+                  size: 50,
+                  title: track.title,
+                  artist: track.artist,
+                  artworkUri: track.artworkUri,
+                  trackId: track.id,
+                  filePath: track.filePath,
+                  seed: index,
+                ),
+                const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -512,8 +704,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               ),
             ],
           ),
-        );
-      },
+        ),
+      );
+    },
     );
   }
 
@@ -543,6 +736,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
           onTap: () {
             ref.read(audioProvider.notifier).playTrackList(tracks, index);
           },
+          onLongPress: () => _showTrackOptions(track),
           child: Stack(
             children: [
               Positioned(
@@ -551,6 +745,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 child: VinylDiscWidget(
                   size: 110,
                   title: track.title,
+                  artist: track.artist,
+                  artworkUri: track.artworkUri,
+                  trackId: track.id,
+                  filePath: track.filePath,
                   seed: index,
                 ),
               ),
@@ -791,13 +989,22 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                             itemBuilder: (context, index) {
                               final track = tracks[index];
                               return ListTile(
-                                leading: VinylDiscWidget(size: 42, title: track.title, seed: index),
+                                leading: VinylDiscWidget(
+                                  size: 42,
+                                  title: track.title,
+                                  artist: track.artist,
+                                  artworkUri: track.artworkUri,
+                                  trackId: track.id,
+                                  filePath: track.filePath,
+                                  seed: index,
+                                ),
                                 title: Text(track.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: AppColors.textPrimary(context), fontWeight: FontWeight.w600)),
                                 subtitle: Text(track.artist, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: AppColors.textSecondary(context), fontSize: 12)),
                                 onTap: () {
                                   Navigator.pop(context);
                                   ref.read(audioProvider.notifier).playTrackList(tracks, index);
                                 },
+                                onLongPress: () => _showTrackOptions(track),
                               );
                             },
                           ),
