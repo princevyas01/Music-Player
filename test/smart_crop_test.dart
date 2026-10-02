@@ -47,6 +47,74 @@ void main() {
       expect(cropped.height, 150);
     });
 
+    test('fitArtworkForCircle fits 16:9 landscape thumbnail preserving both left and right characters', () {
+      // Create a 1600x900 image (16:9 landscape like YouTube thumbnail)
+      final image = img.Image(width: 1600, height: 900);
+      img.fill(image, color: img.ColorRgb8(20, 20, 20));
+
+      // Put Gojo character on the left side (x: 100..250, y: 350..550) - blue
+      for (int y = 350; y < 550; y++) {
+        for (int x = 100; x < 250; x++) {
+          image.setPixel(x, y, img.ColorRgb8(50, 150, 255));
+        }
+      }
+
+      // Put Sukuna character on the right side (x: 1350..1500, y: 350..550) - red/orange
+      for (int y = 350; y < 550; y++) {
+        for (int x = 1350; x < 1500; x++) {
+          image.setPixel(x, y, img.ColorRgb8(255, 60, 40));
+        }
+      }
+
+      final fitted = SmartCropService.fitArtworkForCircle(image, canvasSize: 512);
+      expect(fitted.width, 512);
+      expect(fitted.height, 512);
+
+      // Verify that Gojo's blue pixels are present on the left half
+      bool foundGojo = false;
+      for (int y = 180; y < 330; y++) {
+        for (int x = 20; x < 200; x++) {
+          final p = fitted.getPixel(x, y);
+          if (p.b > 200 && p.r < 100) {
+            foundGojo = true;
+            break;
+          }
+        }
+      }
+      expect(foundGojo, isTrue, reason: 'Gojo on the left of 16:9 thumbnail must be preserved in circular artwork');
+
+      // Verify that Sukuna's red pixels are present on the right half
+      bool foundSukuna = false;
+      for (int y = 180; y < 330; y++) {
+        for (int x = 300; x < 490; x++) {
+          final p = fitted.getPixel(x, y);
+          if (p.r > 200 && p.b < 100) {
+            foundSukuna = true;
+            break;
+          }
+        }
+      }
+      expect(foundSukuna, isTrue, reason: 'Sukuna on the right of 16:9 thumbnail must be preserved in circular artwork');
+    });
+
+    test('fitArtworkForCircle preserves 1:1 square artwork directly', () {
+      final image = img.Image(width: 400, height: 400);
+      img.fill(image, color: img.ColorRgb8(120, 120, 120));
+
+      final fitted = SmartCropService.fitArtworkForCircle(image, canvasSize: 512);
+      expect(fitted.width, 512);
+      expect(fitted.height, 512);
+    });
+
+    test('fitArtworkForCircle fits portrait artwork with ambient backdrop', () {
+      final image = img.Image(width: 900, height: 1600); // 9:16 portrait
+      img.fill(image, color: img.ColorRgb8(30, 80, 150));
+
+      final fitted = SmartCropService.fitArtworkForCircle(image, canvasSize: 512);
+      expect(fitted.width, 512);
+      expect(fitted.height, 512);
+    });
+
     test('smartCropToSquare crops tall portrait image to square prioritizing focal top', () {
       final image = img.Image(width: 100, height: 250);
       img.fill(image, color: img.ColorRgb8(40, 40, 40));
