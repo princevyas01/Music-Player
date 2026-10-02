@@ -111,7 +111,7 @@ class AdvancedSearchQueryParser {
           break;
         case 'year':
           year = int.tryParse(value);
-          if (year == null || year! < 0 || year! > 9999) {
+          if (year == null || year < 0 || year > 9999) {
             return const AdvancedSearchQuery(isValid: false);
           }
           break;
