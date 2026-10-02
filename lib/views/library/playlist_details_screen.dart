@@ -144,7 +144,11 @@ class _PlaylistDetailsScreenState extends ConsumerState<PlaylistDetailsScreen> w
                               secondary: VinylDiscWidget(
                                 size: 40, 
                                 title: track.title, 
-                                seed: int.parse(track.id.replaceAll(RegExp(r'[^0-9]'), '').padLeft(1, '0')) % 100
+                                artist: track.artist,
+                                artworkUri: track.artworkUri,
+                                trackId: track.id,
+                                filePath: track.filePath,
+                                seed: int.parse(track.id.replaceAll(RegExp(r'[^0-9]'), '').padLeft(1, '0')) % 100,
                               ),
                               onChanged: (bool? checked) {
                                 if (checked == true) {
@@ -393,6 +397,10 @@ class _RotaryTrackItem extends StatelessWidget {
     final thumbnail = VinylDiscWidget(
       size: isCenter ? 70 : 64,
       title: track.title,
+      artist: track.artist,
+      artworkUri: track.artworkUri,
+      trackId: track.id,
+      filePath: track.filePath,
       seed: int.parse(track.id.replaceAll(RegExp(r'[^0-9]'), '').padLeft(1, '0')) % 100,
     );
 
