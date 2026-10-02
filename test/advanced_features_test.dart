@@ -116,10 +116,10 @@ void main() {
     };
 
     test('supports AND rules, sorting and limits without duplicates', () {
-      final definition = SmartPlaylistDefinition(
+      const definition = SmartPlaylistDefinition(
         id: 'rule-1',
         name: 'Rock from 2003',
-        rules: const [
+        rules: [
           SmartRule(field: SmartRuleField.genre, operator: SmartRuleOperator.equals, value: 'Rock'),
           SmartRule(field: SmartRuleField.year, operator: SmartRuleOperator.equals, value: 2003),
         ],
@@ -137,10 +137,10 @@ void main() {
     });
 
     test('supports OR and playlist-membership rules', () {
-      final definition = SmartPlaylistDefinition(
+      const definition = SmartPlaylistDefinition(
         id: 'rule-2',
         name: 'Mixed',
-        rules: const [
+        rules: [
           SmartRule(field: SmartRuleField.favorites, operator: SmartRuleOperator.isTrue),
           SmartRule(field: SmartRuleField.playlistMembership, operator: SmartRuleOperator.contains, value: 'Road'),
         ],
