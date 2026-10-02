@@ -52,8 +52,22 @@ class _VinylPlayerWidgetState extends State<VinylPlayerWidget>
   }
 
   void _checkArtwork() {
-    if (_hasValidArtworkFile(widget.artworkUri)) {
+    if (_hasValidArtworkFile(widget.artworkUri) && !widget.artworkUri!.contains('auto_')) {
       _resolvedPath = widget.artworkUri;
+      if (widget.trackId != null &&
+          !widget.artworkUri!.contains('fit_') &&
+          !widget.artworkUri!.contains('art_')) {
+        ArtworkService.resolveSmartArtwork(
+          trackId: widget.trackId!,
+          filePath: widget.filePath,
+        ).then((res) {
+          if (mounted && res != null && _hasValidArtworkFile(res)) {
+            setState(() {
+              _resolvedPath = res;
+            });
+          }
+        });
+      }
       return;
     }
 
